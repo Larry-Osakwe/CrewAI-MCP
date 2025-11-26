@@ -177,7 +177,54 @@ Current scopes: {oauth_scopes}
         import traceback
         return f"❌ Error testing token: {str(e)}\n\n{traceback.format_exc()}"
 
-@mcp.tool(name="summarize_pr", description="Summarize a GitHub PR using AI")
+@mcp.tool(name="analyze_pr", description="Deep PR analysis using 4-agent crew (Overview → Code Review → Community → Summary)")
+@auth_provider.grant("https://api.github.com")
+async def analyze_pr_tool(ctx: Context, repo: str, pr_number: int) -> str:
+    """
+    Multi-agent PR analysis tool.
+
+    Uses 4 specialized agents:
+    - Overview Specialist: Gathers high-level PR info
+    - Code Reviewer: Analyzes code changes in detail (uses GPT-4)
+    - Community Analyst: Reviews comments and discussion
+    - Summarizer: Creates executive summary
+
+    Agents 1-3 independently call GitHub API with the same delegated token!
+    """
+    from .crews.pr_analyzer import run_pr_analysis_crew
+
+    try:
+        # Get access context
+        access_context = ctx.get_state("keycardai")
+
+        # CHECK: Did token exchange fail?
+        if access_context.has_errors():
+            errors = access_context.get_errors()
+            return f"❌ Token exchange failed: {errors}"
+
+        # Get GitHub token
+        github_access = access_context.access("https://api.github.com")
+        github_token = github_access.access_token
+
+        # CHECK: Did we actually get a token?
+        if not github_token:
+            return f"❌ No GitHub token received from Keycard. Provider may not be configured."
+
+        # Log token info
+        token_preview = f"{github_token[:4]}...{github_token[-4:]}" if len(github_token) > 8 else "***"
+        print(f"[DEBUG] analyze_pr: Got GitHub token: {token_preview}, length: {len(github_token)}")
+        print(f"[DEBUG] analyze_pr: Running 4-agent crew for {repo}#{pr_number}")
+
+        # Run multi-agent crew (agents 1-3 will independently call GitHub API!)
+        result = run_pr_analysis_crew(repo, pr_number, github_token)
+        return result
+
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        return f"❌ Error in analyze_pr: {str(e)}\n\nDetails:\n{error_details}"
+
+@mcp.tool(name="summarize_pr", description="Summarize a GitHub PR using AI (single agent, faster)")
 @auth_provider.grant("https://api.github.com")
 async def summarize_pr_tool(ctx: Context, repo: str, pr_number: int) -> str:
     from .crews.pr_summarizer import run_pr_summary_crew
