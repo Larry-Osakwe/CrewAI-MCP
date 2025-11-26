@@ -1,5 +1,5 @@
 from crewai import Agent, Crew, Task
-from tools.github_tools import FetchPRTool
+from ..tools.github_tools import FetchPRTool
 
 def run_pr_summary_crew(repo: str, pr_number: int, github_token: str | None = None):
     # Create tool

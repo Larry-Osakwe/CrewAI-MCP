@@ -54,7 +54,7 @@ async def fetch_pr_simple(ctx: Context, repo: str, pr_number: int) -> dict:
 @mcp.tool(name="summarize_pr", description="Summarize a GitHub PR using AI")
 @auth_provider.grant("https://api.github.com")
 async def summarize_pr_tool(ctx: Context, repo: str, pr_number: int) -> str:
-    from crews.pr_summarizer import run_pr_summary_crew
+    from .crews.pr_summarizer import run_pr_summary_crew
 
     try:
         # Get delegated GitHub token from Keycard
