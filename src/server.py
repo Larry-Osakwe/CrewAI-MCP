@@ -86,25 +86,51 @@ async def test_github_token(ctx: Context) -> str:
             is_bot = user_data.get("type") == "Bot"
             oauth_scopes = user_response.headers.get("X-OAuth-Scopes", "")
 
-            # Test 3: For GitHub Apps, check installation repositories
-            if is_bot or not oauth_scopes:
-                # This is likely a GitHub App token
-                repos_response = await client.get(
-                    "https://api.github.com/installation/repositories",
-                    headers={
-                        "Authorization": f"Bearer {token}",
-                        "Accept": "application/vnd.github.v3+json"
-                    }
-                )
+            # Test 3: Check accessible repositories
+            # Use different endpoint based on token type
+            if not oauth_scopes:
+                # GitHub App token (user access token or installation token)
+                if is_bot:
+                    # Installation token: use /installation/repositories
+                    repos_response = await client.get(
+                        "https://api.github.com/installation/repositories",
+                        headers={
+                            "Authorization": f"Bearer {token}",
+                            "Accept": "application/vnd.github+json"
+                        }
+                    )
+                    token_type = "Installation Access Token"
+                else:
+                    # User access token: use /user/repos
+                    repos_response = await client.get(
+                        "https://api.github.com/user/repos",
+                        params={
+                            "affiliation": "owner,collaborator,organization_member",
+                            "per_page": 100
+                        },
+                        headers={
+                            "Authorization": f"Bearer {token}",
+                            "Accept": "application/vnd.github+json"
+                        }
+                    )
+                    token_type = "User Access Token"
 
                 if repos_response.status_code == 200:
                     repos_data = repos_response.json()
-                    repo_count = repos_data.get("total_count", 0)
-                    repo_names = [r["full_name"] for r in repos_data.get("repositories", [])[:5]]
+
+                    # Handle different response formats
+                    if isinstance(repos_data, dict) and "total_count" in repos_data:
+                        # /installation/repositories format
+                        repo_count = repos_data["total_count"]
+                        repo_names = [r["full_name"] for r in repos_data.get("repositories", [])[:5]]
+                    else:
+                        # /user/repos format (array)
+                        repo_count = len(repos_data)
+                        repo_names = [r["full_name"] for r in repos_data[:5]]
 
                     return f"""✅ GitHub App token works!
 
-Token Type: GitHub App Installation Token
+Token Type: GitHub App {token_type}
 Authenticated as: {username}{"  (Bot)" if is_bot else ""}
 Token length: {len(token)} chars
 Accessible repositories: {repo_count}
@@ -115,27 +141,24 @@ Sample repos:
 Note: GitHub Apps use permissions (not OAuth scopes).
 Empty X-OAuth-Scopes header is EXPECTED for GitHub Apps.
 
-If your private repo isn't listed above:
-1. Check GitHub App installation includes the repo
-2. Verify App has 'Contents: Read' permission
-3. Accept new permissions if prompted
+{"This is a user access token - it acts on your behalf with the intersection of your permissions and the app's permissions." if not is_bot else "This is an installation token - it acts as the app itself."}
 """
                 else:
                     return f"""⚠️ GitHub App token valid but can't list repositories
 
 Authenticated as: {username}
+Token Type: {token_type}
 Error: {repos_response.status_code} - {repos_response.text}
 
 This usually means:
-1. GitHub App doesn't have 'Contents' permission configured
+1. GitHub App doesn't have required permissions configured
 2. GitHub App isn't installed on any repositories
-3. Installation permissions haven't been accepted
+3. Token doesn't have access to any repos
 
 Fix:
-- Go to GitHub App settings → Permissions
-- Add 'Contents: Read' permission
-- Install app on repositories
-- Accept new permissions in installation settings
+- Verify app has 'Contents: Read' permission in GitHub App settings
+- Ensure app is installed on your repositories
+- Check installation configuration includes target repositories
 """
 
             # OAuth App token (has X-OAuth-Scopes)
