@@ -1,0 +1,6 @@
+fastmcp
+keycardai[mcp-fastmcp]
+crewai[tools]
+httpx
+uvicorn[standard]
+python-dotenv
