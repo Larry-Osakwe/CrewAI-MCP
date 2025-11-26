@@ -51,10 +51,10 @@ async def fetch_pr_simple(ctx: Context, repo: str, pr_number: int) -> dict:
             }
         return {"error": f"Status {response.status_code}"}
 
-@mcp.tool(name="test_github_token", description="Test GitHub token and permissions (diagnostic tool)")
+@mcp.tool(name="test_github_token", description="Test GitHub token and permissions (works for OAuth and GitHub Apps)")
 @auth_provider.grant("https://api.github.com")
 async def test_github_token(ctx: Context) -> str:
-    """Diagnostic tool to test GitHub token permissions."""
+    """Diagnostic tool to test GitHub token permissions for both OAuth Apps and GitHub Apps."""
     try:
         access_context = ctx.get_state("keycardai")
 
@@ -66,9 +66,8 @@ async def test_github_token(ctx: Context) -> str:
         if not token:
             return "❌ No token received from Keycard"
 
-        # Test token against GitHub API
         async with httpx.AsyncClient() as client:
-            # Test 1: Get authenticated user
+            # Test 1: Get authenticated user/app
             user_response = await client.get(
                 "https://api.github.com/user",
                 headers={
@@ -83,18 +82,74 @@ async def test_github_token(ctx: Context) -> str:
             user_data = user_response.json()
             username = user_data.get("login")
 
-            # Test 2: Check token scopes
-            scopes = user_response.headers.get("X-OAuth-Scopes", "none")
+            # Test 2: Check if this is a GitHub App token
+            is_bot = user_data.get("type") == "Bot"
+            oauth_scopes = user_response.headers.get("X-OAuth-Scopes", "")
 
-            return f"""✅ GitHub token works!
+            # Test 3: For GitHub Apps, check installation repositories
+            if is_bot or not oauth_scopes:
+                # This is likely a GitHub App token
+                repos_response = await client.get(
+                    "https://api.github.com/installation/repositories",
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Accept": "application/vnd.github.v3+json"
+                    }
+                )
+
+                if repos_response.status_code == 200:
+                    repos_data = repos_response.json()
+                    repo_count = repos_data.get("total_count", 0)
+                    repo_names = [r["full_name"] for r in repos_data.get("repositories", [])[:5]]
+
+                    return f"""✅ GitHub App token works!
+
+Token Type: GitHub App Installation Token
+Authenticated as: {username}{"  (Bot)" if is_bot else ""}
+Token length: {len(token)} chars
+Accessible repositories: {repo_count}
+
+Sample repos:
+{chr(10).join(f"  - {name}" for name in repo_names) if repo_names else "  (none)"}
+
+Note: GitHub Apps use permissions (not OAuth scopes).
+Empty X-OAuth-Scopes header is EXPECTED for GitHub Apps.
+
+If your private repo isn't listed above:
+1. Check GitHub App installation includes the repo
+2. Verify App has 'Contents: Read' permission
+3. Accept new permissions if prompted
+"""
+                else:
+                    return f"""⚠️ GitHub App token valid but can't list repositories
 
 Authenticated as: {username}
-Token scopes: {scopes}
+Error: {repos_response.status_code} - {repos_response.text}
+
+This usually means:
+1. GitHub App doesn't have 'Contents' permission configured
+2. GitHub App isn't installed on any repositories
+3. Installation permissions haven't been accepted
+
+Fix:
+- Go to GitHub App settings → Permissions
+- Add 'Contents: Read' permission
+- Install app on repositories
+- Accept new permissions in installation settings
+"""
+
+            # OAuth App token (has X-OAuth-Scopes)
+            return f"""✅ OAuth App token works!
+
+Token Type: OAuth App Token
+Authenticated as: {username}
+Token scopes: {oauth_scopes}
 Token length: {len(token)} chars
 
 To access private repos, you need the 'repo' scope.
-Current scopes: {scopes}
+Current scopes: {oauth_scopes}
 """
+
     except Exception as e:
         import traceback
         return f"❌ Error testing token: {str(e)}\n\n{traceback.format_exc()}"
