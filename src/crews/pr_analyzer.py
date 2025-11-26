@@ -76,7 +76,10 @@ Use the fetch_pr tool to get:
 
     # Task 2: Analyze Code Changes
     code_review_task = Task(
-        description=f"""Perform a detailed code review of PR #{pr_number}.
+        description=f"""Perform a detailed code review of PR #{pr_number} from repository {repo}.
+
+Repository: {repo}
+PR Number: {pr_number}
 
 Use fetch_pr_files to examine:
 - What files changed
@@ -98,7 +101,10 @@ Provide specific, actionable feedback.""",
 
     # Task 3: Analyze Community Discussion
     community_task = Task(
-        description=f"""Analyze the discussion and feedback on PR #{pr_number}.
+        description=f"""Analyze the discussion and feedback on PR #{pr_number} from repository {repo}.
+
+Repository: {repo}
+PR Number: {pr_number}
 
 Use fetch_pr_comments to examine:
 - Review comments
