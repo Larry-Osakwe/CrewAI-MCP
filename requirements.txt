@@ -1,5 +1,5 @@
 fastmcp>=2.13.0
-keycardai-mcp-fastmcp
+keycardai-mcp[crewai]
 crewai[tools]
 httpx
 uvicorn[standard]

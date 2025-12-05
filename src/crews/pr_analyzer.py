@@ -1,11 +1,10 @@
 from crewai import Agent, Crew, Task
-from ..tools.github_tools import create_github_tools
 
-def run_pr_analysis_crew(repo: str, pr_number: int, github_token: str):
+def run_pr_analysis_crew(repo: str, pr_number: int, tools: list):
     """
     Multi-agent crew where MULTIPLE agents can independently call GitHub API.
 
-    All agents share the same set of GitHub tools with the delegated token.
+    All agents share the same set of Keycard-secured GitHub tools.
     This allows each agent to fetch the specific data they need.
 
     Workflow:
@@ -14,18 +13,20 @@ def run_pr_analysis_crew(repo: str, pr_number: int, github_token: str):
     3. Community Analyst: Analyzes comments/discussion
     4. Summarizer: Synthesizes everything into executive summary
 
-    All agents 1-3 can make independent GitHub API calls!
-    """
+    All agents 1-3 can make independent GitHub API calls through Keycard!
 
-    # Create tools once, share across all agents
-    github_tools = create_github_tools(github_token)
+    Args:
+        repo: GitHub repository (e.g., "owner/repo")
+        pr_number: Pull request number
+        tools: List of Keycard-secured tools from MCP client
+    """
 
     # Agent 1: PR Overview Specialist
     overview_agent = Agent(
         role="PR Overview Specialist",
         goal="Fetch and summarize high-level PR information",
         backstory="Expert at quickly understanding PR scope, purpose, and overall structure",
-        tools=github_tools,  # Has access to ALL GitHub tools
+        tools=tools,  # Keycard-secured tools
         verbose=True,
         llm="gpt-4o-mini"
     )
@@ -35,7 +36,7 @@ def run_pr_analysis_crew(repo: str, pr_number: int, github_token: str):
         role="Senior Code Reviewer",
         goal="Analyze code changes in detail, focusing on quality, security, and best practices",
         backstory="Senior engineer with 10+ years experience in code review. Knows common pitfalls and anti-patterns.",
-        tools=github_tools,  # Has access to ALL GitHub tools
+        tools=tools,  # Keycard-secured tools
         verbose=True,
         llm="gpt-4o"  # More powerful for deep analysis
     )
@@ -45,7 +46,7 @@ def run_pr_analysis_crew(repo: str, pr_number: int, github_token: str):
         role="Community Engagement Analyst",
         goal="Analyze PR comments, review feedback, and community discussion",
         backstory="Expert at understanding team dynamics, identifying consensus, and surfacing concerns from code reviews",
-        tools=github_tools,  # Has access to ALL GitHub tools
+        tools=tools,  # Keycard-secured tools
         verbose=True,
         llm="gpt-4o-mini"
     )

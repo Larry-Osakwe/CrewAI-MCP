@@ -1,16 +1,20 @@
 from crewai import Agent, Crew, Task
-from ..tools.github_tools import FetchPRTool
 
-def run_pr_summary_crew(repo: str, pr_number: int, github_token: str | None = None):
-    # Create tool
-    fetch_tool = FetchPRTool(github_token=github_token)
+def run_pr_summary_crew(repo: str, pr_number: int, tools: list):
+    """
+    Run a single-agent crew to summarize a GitHub PR.
 
-    # Create agent
+    Args:
+        repo: GitHub repository (e.g., "owner/repo")
+        pr_number: Pull request number
+        tools: List of Keycard-secured tools from MCP client
+    """
+    # Create agent with provided tools (NO TOKEN!)
     fetcher = Agent(
         role="PR Researcher",
         goal="Fetch and summarize PR information",
         backstory="You are an expert at analyzing pull requests",
-        tools=[fetch_tool],
+        tools=tools,  # Use Keycard-secured tools
         verbose=True,
         llm="gpt-4o-mini"  # Cheaper for testing
     )
@@ -29,6 +33,6 @@ def run_pr_summary_crew(repo: str, pr_number: int, github_token: str | None = No
         verbose=True
     )
 
-    # Run
+    # Run synchronously - tools will create their own event loops as needed
     result = crew.kickoff()
     return str(result)

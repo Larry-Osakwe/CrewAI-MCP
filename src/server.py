@@ -36,7 +36,7 @@ async def echo_tool(ctx: Context, message: str) -> str:
 # EXISTING TOOLS (keeping them for now)
 # ============================================================================
 
-@mcp.tool(name="fetch_pr_simple", description="Fetch PR (no auth)")
+@mcp.tool(name="fetch_pr_simple", description="Fetch PR from GitHub (no auth required). Parameters: repo (string, e.g. 'owner/repo'), pr_number (integer)")
 async def fetch_pr_simple(ctx: Context, repo: str, pr_number: int) -> dict:
     # Use public GitHub API (no auth required for public repos)
     url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}"
@@ -50,6 +50,131 @@ async def fetch_pr_simple(ctx: Context, repo: str, pr_number: int) -> dict:
                 "user": data.get("user", {}).get("login")
             }
         return {"error": f"Status {response.status_code}"}
+
+@mcp.tool(
+    name="fetch_pr_authenticated",
+    description="Fetch PR from GitHub with authentication (works for private repos). Parameters: repo (string, e.g. 'owner/repo'), pr_number (integer)"
+)
+@auth_provider.grant("https://api.github.com")
+async def fetch_pr_authenticated(ctx: Context, repo: str, pr_number: int) -> dict:
+    """Fetch PR details using user's GitHub token (supports private repos)."""
+    # Get the exchanged GitHub token
+    access_context = ctx.get_state("keycardai")
+
+    # Check if context was set at all
+    if access_context is None:
+        return {
+            "error": "Authentication context not available",
+            "details": "The grant decorator did not inject the auth context. Check: 1) User is authenticated, 2) KEYCARD_* env vars are set, 3) Enable KEYCARD_LOG_LEVEL=DEBUG for more info",
+            "isError": True
+        }
+
+    # Check if there were errors during token exchange
+    if access_context.has_errors():
+        return {
+            "error": "Authentication failed",
+            "details": access_context.get_errors(),
+            "isError": True
+        }
+
+    # Wrap token access in try-catch
+    try:
+        token = access_context.access("https://api.github.com").access_token
+    except Exception as e:
+        return {
+            "error": "Failed to access GitHub token",
+            "details": str(e),
+            "isError": True
+        }
+
+    # Use authenticated GitHub API
+    url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28"
+    }
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+
+            data = response.json()
+
+            # Safely extract nested fields (handle null values)
+            user = data.get("user") or {}
+            base = data.get("base") or {}
+            repo = base.get("repo") or {}
+
+            return {
+                "title": data.get("title"),
+                "state": data.get("state"),
+                "user": user.get("login"),
+                "body": (data.get("body") or "")[:500],  # First 500 chars of description
+                "private": repo.get("private", False),
+                "url": data.get("html_url"),
+                "created_at": data.get("created_at"),
+                "updated_at": data.get("updated_at")
+            }
+    except httpx.HTTPStatusError as e:
+        error_body = e.response.text if hasattr(e.response, 'text') else str(e)
+        return {
+            "error": f"GitHub API error: {e.response.status_code}",
+            "message": (error_body or "")[:200],  # First 200 chars of error
+            "isError": True
+        }
+    except Exception as e:
+        return {"error": str(e), "isError": True}
+
+@mcp.tool(
+    name="test_auth_state",
+    description="Diagnostic tool to test if authentication state is working"
+)
+@auth_provider.grant("https://api.github.com")
+async def test_auth_state(ctx: Context) -> dict:
+    """Diagnostic tool to verify auth context injection and token retrieval."""
+    access_context = ctx.get_state("keycardai")
+
+    # Check 1: Is context set at all?
+    if access_context is None:
+        return {
+            "status": "FAIL",
+            "message": "AccessContext is None - decorator did not inject state",
+            "possible_causes": [
+                "User not authenticated with Keycard",
+                "KEYCARD_ZONE_ID, KEYCARD_CLIENT_ID, or KEYCARD_CLIENT_SECRET not set",
+                "Token exchange failed silently"
+            ],
+            "debug_tip": "Set KEYCARD_LOG_LEVEL=DEBUG in environment and restart server"
+        }
+
+    # Check 2: Were there errors during token exchange?
+    if access_context.has_errors():
+        return {
+            "status": "ERROR",
+            "message": "Token exchange failed",
+            "errors": access_context.get_errors()
+        }
+
+    # Check 3: Can we access the GitHub token?
+    try:
+        token_response = access_context.access("https://api.github.com")
+        token = token_response.access_token
+
+        return {
+            "status": "SUCCESS",
+            "message": "Auth context working correctly!",
+            "token_length": len(token),
+            "token_type": token_response.token_type,
+            "token_preview": f"{token[:10]}...{token[-10:]}" if len(token) > 20 else "***"
+        }
+    except Exception as e:
+        return {
+            "status": "ERROR",
+            "message": f"Failed to access token: {e}",
+            "exception_type": type(e).__name__
+        }
 
 @mcp.tool(name="test_github_token", description="Test GitHub token and permissions (works for OAuth and GitHub Apps)")
 @auth_provider.grant("https://api.github.com")
@@ -177,87 +302,25 @@ Current scopes: {oauth_scopes}
         import traceback
         return f"❌ Error testing token: {str(e)}\n\n{traceback.format_exc()}"
 
-@mcp.tool(name="analyze_pr", description="Deep PR analysis using 4-agent crew (Overview → Code Review → Community → Summary)")
-@auth_provider.grant("https://api.github.com")
-async def analyze_pr_tool(ctx: Context, repo: str, pr_number: int) -> str:
-    """
-    Multi-agent PR analysis tool.
-
-    Uses 4 specialized agents:
-    - Overview Specialist: Gathers high-level PR info
-    - Code Reviewer: Analyzes code changes in detail (uses GPT-4)
-    - Community Analyst: Reviews comments and discussion
-    - Summarizer: Creates executive summary
-
-    Agents 1-3 independently call GitHub API with the same delegated token!
-    """
-    from .crews.pr_analyzer import run_pr_analysis_crew
-
-    try:
-        # Get access context
-        access_context = ctx.get_state("keycardai")
-
-        # CHECK: Did token exchange fail?
-        if access_context.has_errors():
-            errors = access_context.get_errors()
-            return f"❌ Token exchange failed: {errors}"
-
-        # Get GitHub token
-        github_access = access_context.access("https://api.github.com")
-        github_token = github_access.access_token
-
-        # CHECK: Did we actually get a token?
-        if not github_token:
-            return f"❌ No GitHub token received from Keycard. Provider may not be configured."
-
-        # Log token info
-        token_preview = f"{github_token[:4]}...{github_token[-4:]}" if len(github_token) > 8 else "***"
-        print(f"[DEBUG] analyze_pr: Got GitHub token: {token_preview}, length: {len(github_token)}")
-        print(f"[DEBUG] analyze_pr: Running 4-agent crew for {repo}#{pr_number}")
-
-        # Run multi-agent crew (agents 1-3 will independently call GitHub API!)
-        result = run_pr_analysis_crew(repo, pr_number, github_token)
-        return result
-
-    except Exception as e:
-        import traceback
-        error_details = traceback.format_exc()
-        return f"❌ Error in analyze_pr: {str(e)}\n\nDetails:\n{error_details}"
-
-@mcp.tool(name="summarize_pr", description="Summarize a GitHub PR using AI (single agent, faster)")
-@auth_provider.grant("https://api.github.com")
-async def summarize_pr_tool(ctx: Context, repo: str, pr_number: int) -> str:
-    from .crews.pr_summarizer import run_pr_summary_crew
-
-    try:
-        # Get access context
-        access_context = ctx.get_state("keycardai")
-
-        # CHECK: Did token exchange fail?
-        if access_context.has_errors():
-            errors = access_context.get_errors()
-            return f"❌ Token exchange failed: {errors}"
-
-        # Get GitHub token
-        github_access = access_context.access("https://api.github.com")
-        github_token = github_access.access_token
-
-        # CHECK: Did we actually get a token?
-        if not github_token:
-            return f"❌ No GitHub token received from Keycard. Provider may not be configured."
-
-        # Log token info (first/last 4 chars only for security)
-        token_preview = f"{github_token[:4]}...{github_token[-4:]}" if len(github_token) > 8 else "***"
-        print(f"[DEBUG] Got GitHub token: {token_preview}, length: {len(github_token)}")
-
-        # Call crew
-        result = run_pr_summary_crew(repo, pr_number, github_token=github_token)
-        return result
-
-    except Exception as e:
-        import traceback
-        error_details = traceback.format_exc()
-        return f"❌ Error: {str(e)}\n\nDetails:\n{error_details}"
+# ============================================================================
+# NOTE: Crew-wrapping tools removed - crews should run client-side!
+# ============================================================================
+#
+# The analyze_pr and summarize_pr tools have been removed because they:
+# 1. Passed tokens directly to agents (security concern)
+# 2. Mixed concerns (MCP server should provide tools, not run agents)
+# 3. Prevented proper Keycard authorization on each tool call
+#
+# To run crews with Keycard-secured tools, use:
+#   python test_with_keycard.py
+#
+# Or integrate with keycardai-agents package:
+#   from keycardai.agents.crewai_agents import create_client
+#   async with create_client(mcp_client) as client:
+#       tools = await client.get_tools()
+#       result = run_pr_analysis_crew(repo, pr, tools)
+#
+# ============================================================================
 
 # ============================================================================
 # CREATE APP
