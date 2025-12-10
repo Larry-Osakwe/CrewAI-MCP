@@ -19,11 +19,8 @@ auth_provider = AuthProvider(
     ))
 )
 
-# Get RemoteAuthProvider for FastMCP
-auth = auth_provider.get_remote_auth_provider()
-
-# Initialize MCP server WITH auth passed to constructor
-mcp = FastMCP("CrewAI GitHub Demo", auth=auth)
+# Initialize MCP server (auth will be added via auth_provider.app())
+mcp = FastMCP("CrewAI GitHub Demo")
 
 # ============================================================================
 # UNAUTHENTICATED TOOL (just for testing server is running)
@@ -327,6 +324,6 @@ Current scopes: {oauth_scopes}
 # CREATE APP
 # ============================================================================
 
-# Create ASGI app using FastMCP's standard method
-# The auth was already passed to FastMCP constructor above
-app = mcp.http_app()
+# Create ASGI app with Keycard authentication
+# The auth_provider wraps the mcp instance with authentication middleware
+app = auth_provider.app(mcp)
