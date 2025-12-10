@@ -13,5 +13,5 @@ services:
         sync: false
       - key: OPENAI_API_KEY
         sync: false
-      - key: MCP_BASE_URL
+      - key: MCP_SERVER_URL
         sync: false

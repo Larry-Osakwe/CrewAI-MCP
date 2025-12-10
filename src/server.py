@@ -49,11 +49,11 @@ async def fetch_pr_simple(ctx: Context, repo: str, pr_number: int) -> dict:
             }
         return {"error": f"Status {response.status_code}"}
 
+@auth_provider.grant("https://api.github.com")
 @mcp.tool(
     name="fetch_pr_authenticated",
     description="Fetch PR from GitHub with authentication (works for private repos). Parameters: repo (string, e.g. 'owner/repo'), pr_number (integer)"
 )
-@auth_provider.grant("https://api.github.com")
 async def fetch_pr_authenticated(access_ctx: AccessContext, ctx: Context, repo: str, pr_number: int) -> dict:
     """Fetch PR details using user's GitHub token (supports private repos)."""
     # Check if there were errors during token exchange
@@ -114,11 +114,11 @@ async def fetch_pr_authenticated(access_ctx: AccessContext, ctx: Context, repo: 
     except Exception as e:
         return {"error": str(e), "isError": True}
 
+@auth_provider.grant("https://api.github.com")
 @mcp.tool(
     name="test_auth_state",
     description="Diagnostic tool to test if authentication state is working"
 )
-@auth_provider.grant("https://api.github.com")
 async def test_auth_state(access_ctx: AccessContext, ctx: Context) -> dict:
     """Diagnostic tool to verify auth context injection and token retrieval."""
     # Check if there were errors during token exchange
@@ -148,8 +148,8 @@ async def test_auth_state(access_ctx: AccessContext, ctx: Context) -> dict:
             "exception_type": type(e).__name__
         }
 
-@mcp.tool(name="test_github_token", description="Test GitHub token and permissions (works for OAuth and GitHub Apps)")
 @auth_provider.grant("https://api.github.com")
+@mcp.tool(name="test_github_token", description="Test GitHub token and permissions (works for OAuth and GitHub Apps)")
 async def test_github_token(access_ctx: AccessContext, ctx: Context) -> str:
     """Diagnostic tool to test GitHub token permissions for both OAuth Apps and GitHub Apps."""
     try:
