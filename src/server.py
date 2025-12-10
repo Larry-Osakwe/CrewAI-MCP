@@ -2,6 +2,7 @@ from fastmcp import FastMCP, Context
 import httpx
 import os
 from dotenv import load_dotenv
+from starlette.applications import Starlette
 from keycardai.mcp.server.auth import AuthProvider
 from keycardai.mcp.server.auth.application_credentials import ClientSecret
 
@@ -324,5 +325,7 @@ Current scopes: {oauth_scopes}
 # ============================================================================
 
 # Create ASGI app with Keycard authentication
-# The auth_provider wraps the mcp instance with authentication middleware
-app = auth_provider.app(mcp)
+# Use modern FastMCP API (http_app) and manually construct Starlette app
+# to avoid session_manager incompatibility in auth_provider.app()
+mcp_asgi_app = mcp.http_app()
+app = Starlette(routes=auth_provider.get_mcp_router(mcp_asgi_app))
