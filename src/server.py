@@ -12,7 +12,7 @@ load_dotenv()
 auth_provider = AuthProvider(
     zone_id=os.getenv("KEYCARD_ZONE_ID"),
     mcp_server_name="CrewAI GitHub MCP Server",
-    mcp_base_url=os.getenv("MCP_BASE_URL", "http://localhost:8000/"),
+    mcp_server_url=os.getenv("MCP_SERVER_URL", "http://localhost:8000/"),
     application_credential=ClientSecret((
         os.getenv("KEYCARD_CLIENT_ID"),
         os.getenv("KEYCARD_CLIENT_SECRET")
