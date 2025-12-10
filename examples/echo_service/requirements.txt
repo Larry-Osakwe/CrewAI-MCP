@@ -1,0 +1,10 @@
+# Phase 2A SDK - Install from git branch
+keycardai-oauth @ git+https://github.com/keycardai/python-sdk.git@larry/phase2a-service-delegation#subdirectory=packages/oauth
+keycardai-mcp @ git+https://github.com/keycardai/python-sdk.git@larry/phase2a-service-delegation#subdirectory=packages/mcp
+keycardai-agents @ git+https://github.com/keycardai/python-sdk.git@larry/phase2a-service-delegation#subdirectory=packages/agents
+
+# Server dependencies
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+httpx>=0.27.2
+pydantic>=2.11.7

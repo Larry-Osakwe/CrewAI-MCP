@@ -50,7 +50,7 @@ async def test_pr_summarizer_local():
     # NOTE: Pass servers dict directly, NOT wrapped in "mcpServers"
     mcp_config = {
         "github": {  # Server name as top-level key
-            "url": "https://image-raise-palm-archives.trycloudflare.com/mcp",  # Connect via Cloudflare tunnel
+            "url": "https://describe-stereo-moral-licensed.trycloudflare.com/mcp",  # Connect via Cloudflare tunnel
             "transport": "http",  # Streamable HTTP transport (only supported transport)
             "auth": {"type": "oauth"}  # Enable OAuth authentication with server
         }
@@ -135,7 +135,7 @@ async def test_pr_summarizer_local():
         print("  1. Make sure the server is running: ./run_server_local.sh")
         print("  2. Check server logs in the other terminal")
         print("  3. Test tunnel connectivity:")
-        print("     curl https://image-raise-palm-archives.trycloudflare.com/")
+        print("     curl https://describe-stereo-moral-licensed.trycloudflare.com/")
         print("  4. Verify .env has correct MCP_BASE_URL with trailing slash")
         print("  5. Restart server after changing .env")
 
@@ -149,7 +149,7 @@ async def validate_connection():
     # NOTE: Pass servers dict directly, NOT wrapped in "mcpServers"
     mcp_config = {
         "github": {  # Server name as top-level key
-            "url": "https://image-raise-palm-archives.trycloudflare.com/mcp",  # Connect via Cloudflare tunnel
+            "url": "https://describe-stereo-moral-licensed.trycloudflare.com/mcp",  # Connect via Cloudflare tunnel
             "transport": "http",
             "auth": {"type": "oauth"}
         }

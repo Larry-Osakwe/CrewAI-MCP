@@ -2,7 +2,8 @@ from fastmcp import FastMCP, Context
 import httpx
 import os
 from dotenv import load_dotenv
-from keycardai.mcp.integrations.fastmcp import AuthProvider, ClientSecret
+from keycardai.mcp.server.auth import AuthProvider
+from keycardai.mcp.server.auth.application_credentials import ClientSecret
 
 # Load environment variables from .env file
 load_dotenv()
