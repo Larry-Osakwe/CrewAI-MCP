@@ -2,7 +2,7 @@ from fastmcp import FastMCP, Context
 import httpx
 import os
 from dotenv import load_dotenv
-from keycardai.mcp.server.auth import AuthProvider, AccessContext
+from keycardai.mcp.server.auth import AuthProvider
 from keycardai.mcp.server.auth.application_credentials import ClientSecret
 
 # Load environment variables from .env file
@@ -49,24 +49,34 @@ async def fetch_pr_simple(ctx: Context, repo: str, pr_number: int) -> dict:
             }
         return {"error": f"Status {response.status_code}"}
 
-@auth_provider.grant("https://api.github.com")
 @mcp.tool(
     name="fetch_pr_authenticated",
     description="Fetch PR from GitHub with authentication (works for private repos). Parameters: repo (string, e.g. 'owner/repo'), pr_number (integer)"
 )
-async def fetch_pr_authenticated(access_ctx: AccessContext, ctx: Context, repo: str, pr_number: int) -> dict:
+async def fetch_pr_authenticated(ctx: Context, repo: str, pr_number: int) -> dict:
     """Fetch PR details using user's GitHub token (supports private repos)."""
+    # Get the exchanged GitHub token from server-level auth
+    access_context = ctx.get_state("keycardai")
+
+    # Check if context was set
+    if access_context is None:
+        return {
+            "error": "Authentication context not available",
+            "details": "Server-level auth did not inject context. Check KEYCARD_* env vars.",
+            "isError": True
+        }
+
     # Check if there were errors during token exchange
-    if access_ctx.has_errors():
+    if access_context.has_errors():
         return {
             "error": "Authentication failed",
-            "details": access_ctx.get_errors(),
+            "details": access_context.get_errors(),
             "isError": True
         }
 
     # Wrap token access in try-catch
     try:
-        token = access_ctx.access("https://api.github.com").access_token
+        token = access_context.access("https://api.github.com").access_token
     except Exception as e:
         return {
             "error": "Failed to access GitHub token",
@@ -114,24 +124,37 @@ async def fetch_pr_authenticated(access_ctx: AccessContext, ctx: Context, repo: 
     except Exception as e:
         return {"error": str(e), "isError": True}
 
-@auth_provider.grant("https://api.github.com")
 @mcp.tool(
     name="test_auth_state",
     description="Diagnostic tool to test if authentication state is working"
 )
-async def test_auth_state(access_ctx: AccessContext, ctx: Context) -> dict:
+async def test_auth_state(ctx: Context) -> dict:
     """Diagnostic tool to verify auth context injection and token retrieval."""
+    access_context = ctx.get_state("keycardai")
+
+    # Check if context was set
+    if access_context is None:
+        return {
+            "status": "FAIL",
+            "message": "AccessContext is None - server auth did not inject state",
+            "possible_causes": [
+                "User not authenticated with Keycard",
+                "KEYCARD_ZONE_ID, KEYCARD_CLIENT_ID, or KEYCARD_CLIENT_SECRET not set",
+                "Token exchange failed silently"
+            ]
+        }
+
     # Check if there were errors during token exchange
-    if access_ctx.has_errors():
+    if access_context.has_errors():
         return {
             "status": "ERROR",
             "message": "Token exchange failed",
-            "errors": access_ctx.get_errors()
+            "errors": access_context.get_errors()
         }
 
     # Can we access the GitHub token?
     try:
-        token_response = access_ctx.access("https://api.github.com")
+        token_response = access_context.access("https://api.github.com")
         token = token_response.access_token
 
         return {
@@ -148,15 +171,19 @@ async def test_auth_state(access_ctx: AccessContext, ctx: Context) -> dict:
             "exception_type": type(e).__name__
         }
 
-@auth_provider.grant("https://api.github.com")
 @mcp.tool(name="test_github_token", description="Test GitHub token and permissions (works for OAuth and GitHub Apps)")
-async def test_github_token(access_ctx: AccessContext, ctx: Context) -> str:
+async def test_github_token(ctx: Context) -> str:
     """Diagnostic tool to test GitHub token permissions for both OAuth Apps and GitHub Apps."""
     try:
-        if access_ctx.has_errors():
-            return f"❌ Token exchange failed: {access_ctx.get_errors()}"
+        access_context = ctx.get_state("keycardai")
 
-        token = access_ctx.access("https://api.github.com").access_token
+        if access_context is None:
+            return "❌ No authentication context available"
+
+        if access_context.has_errors():
+            return f"❌ Token exchange failed: {access_context.get_errors()}"
+
+        token = access_context.access("https://api.github.com").access_token
 
         if not token:
             return "❌ No token received from Keycard"
