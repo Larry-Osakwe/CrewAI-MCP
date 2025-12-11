@@ -28,11 +28,6 @@ from keycardai.agents.integrations.crewai_a2a import get_a2a_tools
 from keycardai.mcp.client import Client as MCPClient
 from keycardai.mcp.client.integrations.crewai_agents import create_client
 
-import nest_asyncio
-
-# Allow nested event loops (needed for asyncio.run() in crew_factory)
-nest_asyncio.apply()
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -120,18 +115,27 @@ def create_pr_analysis_crew(mcp_tools: list[Any], a2a_tools: list[Any]) -> Crew:
     return crew
 
 
-async def crew_factory() -> Crew:
-    """Factory function to create crew with tools.
+# Global tool cache initialized at startup
+_mcp_tools = None
+_a2a_tools = None
 
-    This is called by the agent service framework when handling requests.
+
+async def initialize_tools():
+    """Initialize MCP and A2A tools once at startup.
+
+    This avoids the need to create tools on every request and eliminates
+    the nested event loop issue with uvloop.
     """
+    global _mcp_tools, _a2a_tools
+
+    logger.info("Initializing MCP and A2A tools...")
+
     # MCP client configuration for GitHub tools
     mcp_config = {
         "github": {
             "url": os.getenv("GITHUB_MCP_SERVER_URL", "http://localhost:8000/mcp"),
         }
     }
-
     mcp_client = MCPClient(mcp_config)
 
     # Service configuration for A2A delegation
@@ -147,27 +151,30 @@ async def crew_factory() -> Crew:
 
     # Get MCP tools
     async with create_client(mcp_client) as crewai_client:
-        mcp_tools = await crewai_client.get_tools()
+        _mcp_tools = await crewai_client.get_tools()
 
     # Get A2A delegation tools
-    # For this example, we manually specify the Echo service
-    # In production, this would query Keycard for dependencies
     echo_service = {
         "name": "Echo Service",
         "url": os.getenv("ECHO_SERVICE_URL", "http://localhost:8002"),
         "description": "Simple echo service for testing A2A delegation",
         "capabilities": ["echo", "testing", "a2a_delegation"],
     }
+    _a2a_tools = await get_a2a_tools(service_config, delegatable_services=[echo_service])
 
-    a2a_tools = await get_a2a_tools(
-        service_config,
-        delegatable_services=[echo_service],
-    )
+    logger.info(f"Initialized {len(_mcp_tools)} MCP tools and {len(_a2a_tools)} A2A tools")
 
-    logger.info(f"Loaded {len(mcp_tools)} MCP tools and {len(a2a_tools)} A2A tools")
 
-    # Create and return crew
-    return create_pr_analysis_crew(mcp_tools, a2a_tools)
+def crew_factory_sync() -> Crew:
+    """Synchronous crew factory using pre-initialized tools.
+
+    This is called by the agent service framework when handling requests.
+    Tools are initialized once at startup to avoid async/event loop issues.
+    """
+    if _mcp_tools is None or _a2a_tools is None:
+        raise RuntimeError("Tools not initialized. Call initialize_tools() at startup.")
+
+    return create_pr_analysis_crew(_mcp_tools, _a2a_tools)
 
 
 def main():
@@ -184,6 +191,10 @@ def main():
         logger.error(f"Missing required environment variables: {', '.join(missing)}")
         exit(1)
 
+    # Initialize MCP and A2A tools before starting server
+    logger.info("Initializing tools...")
+    asyncio.run(initialize_tools())
+
     # Service configuration
     config = AgentServiceConfig(
         service_name="PR Analysis Service",
@@ -195,7 +206,7 @@ def main():
         host=os.getenv("HOST", "0.0.0.0"),
         description="Analyzes GitHub pull requests for code quality and security",
         capabilities=["pr_analysis", "code_review", "github_integration"],
-        crew_factory=lambda: asyncio.run(crew_factory()),
+        crew_factory=crew_factory_sync,
     )
 
     # Start service (blocking)
