@@ -28,6 +28,11 @@ from keycardai.agents.integrations.crewai_a2a import get_a2a_tools
 from keycardai.mcp.client import Client as MCPClient
 from keycardai.mcp.client.integrations.crewai_agents import create_client
 
+import nest_asyncio
+
+# Allow nested event loops (needed for asyncio.run() in crew_factory)
+nest_asyncio.apply()
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
